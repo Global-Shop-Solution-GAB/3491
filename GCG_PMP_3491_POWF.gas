@@ -1,0 +1,189 @@
+Program.Sub.Preflight.Start
+
+Program.Sub.Preflight.End
+
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+'Created for Percision Machined Products by SKC on 12/28/2015
+'This program will create a workflow that will send a request for Sign off when certain users create a PO.
+'Until the signoff has occured then the Print and Email buttons will remain locked.  
+'Hook 16870 PreSave
+'Hook 16850 Pop
+'Hook 16855 PO Change Hook
+v.Local.sSql.Declare(String)
+v.Local.sID.Declare(String)
+v.Local.sPO.Declare(String)
+v.Local.bMember.Declare(Boolean)
+
+F.ODBC.Connection!conx.OpenConnection(v.Ambient.PDSN, v.Ambient.PUser, v.Ambient.PPass)
+
+F.Intrinsic.Control.SelectCase(v.Caller.Hook)
+	F.Intrinsic.Control.Case(16870)
+		'Trigger the WF if the user is part of user Group POW1
+		F.Global.Security.IsInGroup(v.Caller.User, "POW1", v.Local.bMember)
+		F.Intrinsic.Control.If(v.Local.bMember, =, TRUE)
+			F.Intrinsic.Control.CallSub(ismember)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Case(16850)
+		f.Intrinsic.Control.If(v.Caller.Switches, =, "N")
+			'Check user group.
+			F.Global.Security.IsInGroup(v.Caller.User, "POW1", v.Local.bMember)
+			F.Intrinsic.Control.If(v.Local.bMember, =, True)
+				F.Intrinsic.Control.CallSub(ismember)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf	
+	F.Intrinsic.Control.Case(16855)
+		F.Intrinsic.Control.If(v.Caller.Switches, =, "O")
+			'see who made the PO
+			F.Intrinsic.String.LPad(v.Passed.000008, "0", 7, v.Local.sPO)
+			F.Intrinsic.String.Build("Select Top 1 (Changed_By) as Changed_By from v_PO_Lines where Purchase_Order = '{0}'",v.Local.sPO, v.Local.sSql)
+			F.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql, v.Local.sID)
+			F.Global.Security.IsInGroup(v.Local.sID, "POW1", v.Caller.CompanyCode, v.Local.bMember)
+			F.Intrinsic.Control.If(v.Local.bMember, =, True)
+				F.Intrinsic.Control.CallSub(ismember)
+			F.Intrinsic.Control.Else
+				F.Intrinsic.Control.CallSub(lockcontrols, "LOCK", "NO")
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndSelect
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_PMP_3491_POWF.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.LockControls.Start
+F.Intrinsic.Control.SetErrorHandler("LockControls_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+F.Intrinsic.Control.If(v.Args.LOCK, =, "YES")
+	F.Intrinsic.UI.ChangeCallerProperty(v.Passed.000064, "HIDE", 1)
+	F.Intrinsic.UI.ChangeCallerProperty(v.Passed.000047, "HIDE", 1)
+F.Intrinsic.Control.Else
+	F.Intrinsic.UI.ChangeCallerProperty(v.Passed.000064, "HIDE", 0)
+	F.Intrinsic.UI.ChangeCallerProperty(v.Passed.000047, "HIDE", 0)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("LockControls_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_PMP_3491_POWF.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.LockControls.End
+
+Program.Sub.IsMember.Start
+F.Intrinsic.Control.SetErrorHandler("IsMember_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+v.Local.sSql.Declare(String)
+v.Local.sTitle.Declare(String)
+v.Local.sID.Declare(String)
+v.Local.sComp.Declare(String)
+v.Local.sUserEmail.Declare(String)
+v.Local.sUserName.Declare(String)
+v.Local.sSignEmail.Declare(String)
+v.Local.sSignName.Declare(String)
+v.Local.dDue.Declare(Date)
+v.Local.iRet.Declare(Long)
+v.Local.iUser.Declare(Long)
+v.Local.iWF.Declare(Long)
+
+F.Global.WorkFlow.GetIDFromTitle("One Step Approval PO",v.Local.iWF)
+v.Local.sSql.Set("Select WFT_ID from ATG_WFT_Header where Title = 'One Step Approval PO'")
+F.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql, v.Local.iWF)
+F.Intrinsic.String.Build("Select WF_ID From ATG_WF_Header where Template = '{0}' and Meta_0 = '{1}'", v.Local.iWF, v.Passed.000008, v.Local.sSql)
+F.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql, v.Local.sID)
+F.Intrinsic.Control.If(v.Local.sID, =, "")
+	'no workflow and there should be so create it
+	F.Intrinsic.String.Build("One Step Approval for PO: {0}", v.Passed.000008, v.Local.sTitle)
+	F.Global.WorkFlow.CreateFromTemplate(v.Local.iWF,v.Local.sTitle, v.Ambient.Date, v.Local.dDue, v.Caller.User,1, v.Local.iRet)
+	F.Global.WorkFlow.SetMetaData(v.Local.iRet,1, 0, v.Passed.000008)
+	F.Intrinsic.String.Build("Select User_Group from ATG_WF_Lines where WF_ID = '{0}'", v.Local.iRet, v.Local.sSql)
+	F.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql, v.Local.sComp)
+	F.Intrinsic.Control.If(v.Local.sComp, !=, "")
+		'get user email address
+		F.Global.Security.GetUserEmail(v.Caller.User, v.Caller.CompanyCode, v.Local.sUserEMail)
+		F.Global.Security.GetFullName(v.Caller.User, v.Caller.CompanyCode, v.Local.sUserName)
+		F.Intrinsic.String.Build("{0}*!*{1}", v.Local.sUserEMail, v.Local.sUserName, v.Local.sUserEMail)
+		'get signoff users email address
+		F.Global.Security.GetUserEmail(v.Local.sComp, v.Caller.CompanyCode, v.Local.sSignEmail)
+		F.Global.Security.GetFullName(v.Local.sComp, v.Caller.CompanyCode, v.Local.sSignName)
+		F.Intrinsic.String.Build("{0}*!*{1}", v.Local.sSignName, v.Local.sSignEmail, v.Local.sSignEmail)
+		F.Global.Security.GetUserId(V.Caller.User,V.Caller.CompanyCode,V.Local.iUser)
+		F.Global.Messaging.QueueMessage(v.Caller.CompanyCode, v.Local.iUser, "Approval PO WF", v.Local.sTitle, v.Local.sUserEMail, v.Local.sSignEmail, "PO is waiting for Sign Off.") 
+		F.Intrinsic.Control.CallSub(lockcontrols, "LOCK", "YES")
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Else
+	'see if the po has been signed off yet
+	F.Intrinsic.String.Build("Select Signedoff_date from ATG_WF_Lines where WF_ID = '{0}'", v.Local.sID, v.Local.sSql)
+	F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst", v.Local.sSql)
+	F.Intrinsic.Control.If(v.ODBC.conx!rst.EOF, =, False)
+		v.Local.sComp.Set(v.ODBC.conx!rst.FieldVal!Signedoff_Date)
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.If(v.Local.sComp, =, "")
+		F.Intrinsic.Control.CallSub(lockcontrols, "LOCK", "YES")
+	F.Intrinsic.Control.Else
+		F.Intrinsic.Control.CallSub(lockcontrols, "LOCK", "NO")
+	f.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("IsMember_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_PMP_3491_POWF.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.IsMember.End
+
+Program.Sub.Unload.Start
+F.Intrinsic.Control.SetErrorHandler("Unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+
+F.ODBC.Connection!conx.Close
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_PMP_3491_POWF.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+Program.Sub.Unload.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$SKT$}$12/28/2015 7:30:39 AM$}$False
+Program.Sub.Comments.End
